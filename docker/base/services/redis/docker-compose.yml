@@ -1,0 +1,5 @@
+services:
+  redis:
+    # Production-grade resource limits for Redis
+
+    # Volumes remain the same as base (named volume redis_data)

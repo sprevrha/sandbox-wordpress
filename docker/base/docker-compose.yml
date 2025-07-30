@@ -1,0 +1,159 @@
+# docker-compose.yml
+# Core Docker Compose file for WordPress with MariaDB and Redis.
+# Defines named volumes, network, secrets, and base service configurations.
+
+# version: '3.8' # Using a modern version that supports secrets and deploy
+
+volumes:
+  # Have Docker manage the database and redis data volumes.
+  redis_data:
+  db_data:
+  wp_data: 
+
+networks:
+  # Define the main network for inter-service communication.
+  # The name is interpolated from DOCKER_NETWORK env var, defaulting to 'docker_network'.
+#  ${DOCKER_NETWORK:-docker_network}:
+  docker_network:
+    driver: ${DOCKER_NETWORK_DRIVER:-bridge} # Default to 'bridge' driver
+
+secrets:
+  # Define secrets, which Docker will manage securely.
+  # The file paths here are on the host machine, where Docker Compose is executed.
+  db_root_password:
+    file: ${CONF_DIR}/secrets/db_root_password.txt
+  db_user:
+    file: ${CONF_DIR}/secrets/db_user.txt
+  db_password:
+    file: ${CONF_DIR}/secrets/db_password.txt
+  redis_password:
+    file: ${CONF_DIR}/secrets/redis_password.txt
+
+services:
+  db:
+    image: ${DB_IMAGE:-mariadb:10.11}
+    container_name: ${DB_CONTAINER_NAME:-db}
+    environment:
+      # Use Docker secrets for sensitive information (paths are inside the container)
+      MYSQL_ROOT_PASSWORD_FILE: /run/secrets/db_root_password
+      MYSQL_DATABASE: ${DB_NAME:-wordpress}
+      MYSQL_USER_FILE: /run/secrets/db_user
+      MYSQL_PASSWORD_FILE: /run/secrets/db_password
+    volumes:
+      # Named volume for persistent database data
+      - db_data:/var/lib/mysql
+    networks:
+      # Connect to the main application network
+#      - ${DOCKER_NETWORK:-docker_network}
+       - docker_network
+    ports:
+      - "${DB_PORT:-3306}:${DB_PORT:-3306}" # Expose MySQL port
+    # Command to start MySQL with root password from secret
+    secrets:
+      # Associate secrets with this service
+      - db_root_password
+      - db_user
+      - db_password
+    restart: unless-stopped # Always restart unless explicitly stopped
+    healthcheck:
+      # Healthcheck to ensure the database is ready
+      test: ["CMD-SHELL", "${DB_HEALTHCHECK_CMD:-mysqladmin ping -h localhost -u \"$$(cat $$MYSQL_USER_FILE)\" --password=\"$$(cat $$MYSQL_PASSWORD_FILE)\" || exit 1}"]
+      interval: ${DB_HEALTHCHECK_INTERVAL:-10s}
+      timeout: ${DB_HEALTHCHECK_TIMEOUT:-5s}
+      retries: ${DB_HEALTHCHECK_RETRIES:-5}
+      start_period: ${DB_HEALTHCHECK_START_PERIOD:-30s} # Allow time for MariaDB to initialize
+
+
+  redis:
+    image: ${REDIS_IMAGE:-redis:7-alpine}
+    container_name: ${REDIS_CONTAINER_NAME:-redis}
+    ports:
+      - "${REDIS_PORT:-6379}:${REDIS_PORT:-6379}" # Expose Redis port
+    # Command to start Redis with append-only mode and password from secret
+    command: ["sh", "-c", "redis-server --appendonly yes --requirepass $$(cat $${REDIS_PASSWORD_FILE:-/run/secrets/redis_password})"]
+    environment:
+      - REDIS_PASSWORD_FILE=/run/secrets/redis_password
+    volumes:
+      # Named volume for Redis data persistence
+      - redis_data:/data
+    networks:
+#      - ${DOCKER_NETWORK:-docker_network}
+       - docker_network
+    restart: unless-stopped
+    secrets:
+      - redis_password
+    healthcheck:
+      # Healthcheck for Redis, using REDISCLI_AUTH for password
+      test: ${REDIS_HEALTHCHECK_CMD:-REDISCLI_AUTH="$$(cat $$REDIS_PASSWORD_FILE)"; redis-cli -a "$$REDISCLI_AUTH" ping | grep PONG}
+      interval: ${REDIS_HEALTHCHECK_INTERVAL:-5s}
+      timeout: ${REDIS_HEALTHCHECK_TIMEOUT:-5s}
+      retries: ${REDIS_HEALTHCHECK_RETRIES:-5}
+      start_period: ${REDIS_HEALTHCHECK_START_PERIOD:-20s} # Allow time for Redis to initialize
+
+  wordpress:
+    image: ${WP_IMAGE:-wordpress:6.4-php8.2-fpm-alpine}
+    container_name: ${WP_CONTAINER_NAME:-wordpress}
+    # Depends on DB and Redis being healthy before starting
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+#      - ${DOCKER_NETWORK:-docker_network}
+       - docker_network
+    secrets:
+      # Associate secrets needed by WordPress
+      - db_user
+      - db_password
+      - redis_password
+    environment:
+#      WP_CONFIG_FILE: /var/www/html/wp-my-config.php    
+      # Database connection details for WordPress
+      FASTCGI_PORT: ${FASTCGI_PORT:-9000}
+      WORDPRESS_DB_HOST: db:${DB_PORT}
+      WORDPRESS_DB_USER_FILE: /run/secrets/db_user
+      WORDPRESS_DB_PASSWORD_FILE: /run/secrets/db_password
+      WORDPRESS_DB_NAME: ${DB_NAME}
+      WP_PHP_EXTRA: ${WP_PHP_EXTRA:-/opt/php-extra}
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/combined-healthcheck.sh"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s # Allow time for WordPress to initialize 
+    volumes:
+      - ./docker/base/services/wordpress/php/wp-healthcheck.php:${WP_PHP_EXTRA}/wp-healthcheck.php
+      - ./docker/base/services/wordpress/bin/combined-healthcheck.sh:/usr/local/bin/combined-healthcheck.sh
+      - wp_data:/var/www/html
+  nginx:
+    image: ${NGINX_IMAGE:-nginx:1.25.5-alpine}
+    container_name: ${NGINX_CONTAINER_NAME:-nginx}
+    # Depends on WordPress being healthy before starting
+    depends_on:
+      wordpress:
+        condition: service_healthy
+    restart: unless-stopped
+    # Expose ports for direct access from the host in development
+    ports:
+      - "${DOCKER_HOST_HTTP_PORT:-80}:${WP_HTTP_PORT:-80}"
+      - "${DOCKER_HOST_HTTPS_PORT:-443}:${WP_HTTPS_PORT:-443}"
+    networks:
+#      - ${DOCKER_NETWORK:-docker_network}
+       - docker_network
+    volumes:
+      # Bind mounts for Nginx configuration
+      - ${BIN_DIR:-${CWD}}/entrypoint.sh:/usr/local/bin/entrypoint.sh
+      - ${CONF_DIR:-${CWD}}/nginx-conf:/etc/conf/nginx
+      - ${CONF_DIR:-${CWD}}/ssl:/etc/ssl
+      - wp_data:/var/www/html
+    healthcheck:
+      # Healthcheck for Nginx to ensure it's serving HTTP against the health endpoint
+      # We use 127.0.0.1 to ensure we're using IPv4 address for health check
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1/health"]
+      interval: ${NGINX_HEALTHCHECK_INTERVAL:-30s}
+      timeout: ${NGINX_HEALTHCHECK_TIMEOUT:-10s}
+      retries: ${NGINX_HEALTHCHECK_RETRIES:-3}
+      start_period: ${NGINX_HEALTHCHECK_START_PERIOD:-20s}
+      

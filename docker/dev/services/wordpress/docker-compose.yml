@@ -1,0 +1,17 @@
+services:
+  wordpress:
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: 3
+    environment:
+      WP_DEBUG: ${WP_DEBUG:-true}
+#      WP_DEBUG_LOG: "${WP_DEBUG_LOG:-true}"
+      WP_DEBUG_LOG: /var/www/html/wp-content/logs/debug.log
+      WP_DEBUG_LOG_DIR: ${WP_DEBUG_LOG_DIR:-/var/www/html/wp-content/logs}
+      WP_DEBUG_DISPLAY: ${WP_DEBUG_DISPLAY:-false}
+    volumes:
+      # Bind mount for WordPress debug log
+#      - ${LOG_DIR:-${CWD}/log/${STAGE}}/wordpress/:${WP_DEBUG_LOG_DIR:-/var/www/html/wp-content/logs}
+       - ./logs/dev/wordpress:/var/www/html/wp-content/logs      

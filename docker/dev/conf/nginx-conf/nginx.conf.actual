@@ -1,0 +1,326 @@
+# This configuration sets up FastCGI gateway for a WordPress-FPM instance running in a Docker container.
+# It listens on port 80 and forwards requests to the WordPress container.
+
+# FastCGI Cache Zone for Redis
+fastcgi_cache_path /var/cache/nginx levels=1:2 keys_zone=WORDPRESS:100m inactive=60m;
+fastcgi_cache_key "$scheme$request_method$host$request_uri";
+fastcgi_cache_use_stale error timeout invalid_header http_500;
+fastcgi_ignore_headers Cache-Control Expires Set-Cookie;
+fastcgi_cache WORDPRESS;
+fastcgi_cache_valid 200 301 302 60m;
+fastcgi_cache_background_update on;
+fastcgi_cache_lock on;
+fastcgi_cache_lock_timeout 5s;
+fastcgi_cache_bypass $http_cache_control;
+fastcgi_no_cache $http_cache_control;
+fastcgi_cache_methods GET HEAD POST;
+fastcgi_cache_min_uses 1;
+fastcgi_cache_revalidate on;
+
+# FastCGI Cache Purge
+map $http_x_purge $purge {
+    default 0;
+    "~^purge$" 1;
+}
+
+# Gzip settings - apply to all server blocks
+gzip on;
+gzip_http_version 1.1;
+gzip_comp_level 5;
+gzip_min_length 256;
+gzip_proxied any;
+gzip_types text/plain text/css text/xml text/javascript application/javascript application/xml+rss application/json application/font-woff application/font-woff2 font/woff font/woff2 image/svg+xml;
+gzip_vary on;
+gzip_disable "msie6"; # quotes for the regex pattern
+
+# Log format
+# Commented out because it is already defined in nginx.conf in the current nginx 
+# docker image
+# log_format main '$remote_addr - $remote_user [$time_local] "$request" $status $body_bytes_sent "$http_referer" "$http_user_agent" "$http_x_forwarded_for"';
+
+# HTTP Server - redirects to HTTPS
+server {
+    listen 80;
+    server_name sandbox-wordpress.local www.sandbox-wordpress.local;
+
+    # Health check endpoint - no redirect
+    location /health {
+        access_log off;
+        return 200 "healthy\n";
+        add_header Content-Type text/plain;
+    }
+    
+    # Redirect everything else to HTTPS
+    location / {
+        return 301 https://$server_name$request_uri;
+    }
+}
+
+# HTTPS Server
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name sandbox-wordpress.local www.sandbox-wordpress.local;
+
+    # Types Hash Settings
+    types_hash_max_size 2048;
+    types_hash_bucket_size 128;
+
+    # Document Root
+    root /var/www/html;
+    index index.php index.html index.htm;    
+    
+    # Logging
+    access_log /var/log/nginx/access.log main;
+    error_log /var/log/nginx/error.log;
+    
+    # Client Body Size
+    client_max_body_size 100M;
+    client_body_buffer_size 16k;
+    client_header_buffer_size 1k;
+    large_client_header_buffers 4 8k;
+    
+    # Connection Settings
+    client_body_timeout 60s;
+    client_header_timeout 60s;
+    keepalive_timeout 65s;
+    send_timeout 60s;
+    keepalive_requests 100;
+    proxy_connect_timeout 60s;
+    proxy_send_timeout 60s;
+    proxy_read_timeout 60s;
+    sendfile on;
+    tcp_nopush on;
+    tcp_nodelay on;
+    reset_timedout_connection on;
+    server_tokens off;
+    underscores_in_headers on;
+    charset utf-8;
+    charset_types  text/plain text/css application/json application/javascript application/x-javascript application/xml application/xml+rss text/javascript image/svg+xml image/x-icon image/png image/jpeg image/gif;
+
+    # SSL Configuration  
+    ssl_certificate /etc/ssl/certs/ssl-cert-snakeoil.pem;
+    ssl_certificate_key /etc/ssl/private/ssl-cert-snakeoil.key;
+    ssl_trusted_certificate /etc/ssl/certs/ca-certificates.crt;
+    ssl_dhparam /etc/ssl/certs/dhparam.pem;
+#    ssl_certificate_chain ${NGINX_SSL_CERT_CHAIN};
+#    ssl_certificate_fullchain ${NGINX_SSL_CERT_FULLCHAIN};
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305;
+    ssl_prefer_server_ciphers off;
+    ssl_session_tickets on;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 10m;
+    ssl_stapling off;
+    ssl_stapling_verify off;
+    ssl_verify_depth 2;
+    ssl_verify_client off;
+    
+    # DNS Resolver
+    resolver 8.8.8.8 valid=10s;
+    resolver_timeout 10s;
+    
+    # Optional: Enable rewrite log for debugging
+    rewrite_log off;
+
+    # Add Cache-Status Header
+    add_header X-Cache-Status $upstream_cache_status;
+    # Add X-Forwarded-For Header
+    add_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
+    # Security headers
+    add_header X-Frame-Options SAMEORIGIN always;
+    add_header X-Content-Type-Options nosniff always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header Referrer-Policy "no-referrer-when-downgrade" always;
+    add_header Content-Security-Policy "default-src 'self'; img-src 'self' data:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://ajax.googleapis.com https://www.google-analytics.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; frame-src 'self' https://www.youtube.com; object-src 'none'; base-uri 'self';" always;
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload" always;
+
+    # WordPress main location
+    location / {
+        try_files $uri $uri/ /index.php?$args;
+    }
+    
+    # Don't cache admin areas
+    location ~ /wp-admin/ {
+        try_files $uri $uri/ /index.php?$args;
+        
+        location ~ \.php$ {
+            try_files $uri =404;
+            fastcgi_split_path_info ^(.+\.php)(/.+)$;
+            fastcgi_pass wordpress:9000;
+            fastcgi_index index.php;
+            fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+            fastcgi_param PATH_INFO $fastcgi_path_info;
+            fastcgi_param HTTP_X_FORWARDED_PROTO https;
+            fastcgi_param HTTPS on;
+            include fastcgi_params;
+            
+            # WordPress specific FastCGI parameters
+            fastcgi_read_timeout 60s;
+            fastcgi_buffer_size 16k;
+            fastcgi_buffers 8 8k;
+            fastcgi_busy_buffers_size 16k;
+            fastcgi_temp_file_write_size 1024m;
+            fastcgi_connect_timeout 60s;
+            fastcgi_send_timeout 60s;
+            fastcgi_intercept_errors on;
+            
+            # Never cache admin
+            fastcgi_cache_bypass 1; 
+            fastcgi_no_cache 1;
+        }
+    }    
+
+    # WordPress admin-ajax.php (don't cache)
+    location = /wp-admin/admin-ajax.php {
+        try_files $uri =404;
+        fastcgi_split_path_info ^(.+\.php)(/.+)$;
+        fastcgi_pass wordpress:9000;
+        fastcgi_index index.php;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+        include fastcgi_params;
+        fastcgi_read_timeout 60s;
+        fastcgi_cache_bypass 1;
+        fastcgi_no_cache 1;
+    }
+    
+    # Simple cache purge alternative - returns cache status info
+    location ~ /purge(/.*) {
+        allow 127.0.0.1;
+        allow 10.0.0.0/8;
+        allow 172.16.0.0/12;
+        allow 192.168.0.0/16;
+        deny all;
+        
+        # Return cache information instead of purging
+        # Manual purge can be done via: find /var/cache/nginx -name "*" -delete
+        return 200 "Cache purge endpoint - manual deletion required\nCache directory: /var/cache/nginx\nRequested URI: $1\nTo purge all cache: docker exec <container> find /var/cache/nginx -type f -delete\n";
+        add_header Content-Type text/plain;
+    }
+
+    # Set cache bypass conditions
+    set $skip_cache 0;
+    
+    # POST requests and URLs with a query string should always go to PHP
+    if ($request_method = POST) {
+        set $skip_cache 1;
+    }
+    if ($query_string != "") {
+        set $skip_cache 1;
+    }
+    
+    # Don't cache URIs containing the following segments
+    if ($request_uri ~* "/wp-admin/|/xmlrpc.php|wp-.*.php|/feed/|index.php|sitemap(_index)?.xml") {
+        set $skip_cache 1;
+    }
+    
+    # Don't use the cache for logged-in users or recent commenters
+    if ($http_cookie ~* "comment_author|wordpress_[a-f0-9]+|wp-postpass|wordpress_no_cache|wordpress_logged_in") {
+        set $skip_cache 1;
+    }   
+
+    # PHP processing - Main block (consolidated) with caching enabled or disabled based on the value of $skip_cache
+    location ~ \.php$ {
+        try_files $uri =404;
+        fastcgi_split_path_info ^(.+\.php)(/.+)$;
+        fastcgi_pass wordpress:9000;
+        fastcgi_index index.php;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+        fastcgi_param PATH_INFO $fastcgi_path_info;
+        fastcgi_param HTTP_X_FORWARDED_PROTO https;
+        fastcgi_param HTTPS on;
+        include fastcgi_params;
+        
+        # WordPress specific FastCGI parameters
+        fastcgi_read_timeout 60s;
+        fastcgi_buffer_size 16k;
+        fastcgi_buffers 8 8k;
+        fastcgi_busy_buffers_size 16k;
+        fastcgi_temp_file_write_size 1024m;
+        fastcgi_connect_timeout 60s;
+        fastcgi_send_timeout 60s;
+        fastcgi_intercept_errors on;
+
+        fastcgi_cache WORDPRESS;
+        fastcgi_cache_bypass $skip_cache;
+        fastcgi_no_cache $skip_cache;
+        fastcgi_cache_bypass $http_cache_control;
+        fastcgi_no_cache $http_cache_control;
+    }
+    
+    # Static assets caching
+    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg)$ {
+        expires 30d;
+        access_log off;
+        add_header Cache-Control "public, no-transform" always;
+    }
+    
+    # Font files
+    location ~* \.(eot|ttf|woff|woff2|otf)$ {
+        expires 1y;
+        access_log off;
+        add_header Access-Control-Allow-Origin * always;
+        add_header Cache-Control "public, no-transform" always;
+    }
+    
+    # Media files
+    location ~* \.(mp4|webm|ogg|ogv|mp3|wav)$ {
+        expires 30d;
+        access_log off;
+        add_header Cache-Control "public, no-transform" always;
+    }
+    
+    # Document files
+    location ~* \.(pdf|doc|docx|xls|xlsx|ppt|pptx)$ {
+        expires 30d;
+        access_log off;
+        add_header Cache-Control "public, no-transform" always;
+    }
+    
+    # Archive files
+    location ~* \.(zip|tar|gz|rar)$ {
+        expires 1y;
+        access_log off;
+        add_header Cache-Control "public, no-transform" always;
+    }
+    
+    # Data files
+    location ~* \.(json|xml|txt)$ {
+        expires 1d;
+        access_log off;
+        add_header Cache-Control "public, no-transform" always;
+    }
+    
+    # Prevent access to WordPress specific security
+    location ~ /\.ht {
+        deny all;
+    }
+    
+    # Prevent access to WordPress sensitive files
+    location ~* \.(txt|log|conf)$ {
+        deny all;
+    }
+    
+    # Prevent access to WordPress uploads directory
+    location ~* /wp-content/uploads/.*\.php$ {
+        deny all;
+    }
+    
+    # Prevent access to WordPress includes directory
+    location ~* /wp-includes/.*\.php$ {
+        deny all;
+    }
+
+    # Prevent access to wp-config.php
+    location ~* wp-config\.php {
+        deny all;
+    }
+}
+
+# This needs to go after the server block
+#worker_processes auto;
+#worker_rlimit_nofile 65536;
+#events {
+#    worker_connections 1024;
+#}

@@ -1,0 +1,3 @@
+# services:
+#   db:
+#     # Production-grade resource limits for MariaDB

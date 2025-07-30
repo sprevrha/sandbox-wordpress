@@ -1,0 +1,76 @@
+# docker-compose.dev.yml
+# Development-specific Docker Compose overrides.
+# - Sets relaxed resource limits for development.
+# - Uses bind mounts for local development (e.g., source code, configuration files).
+# - Ports are exposed for local access.
+# - Enables logging with local file paths for easier debugging.
+
+services:
+  db:
+    deploy:
+      resources:
+        limits:
+          cpus: ${DB_DEPLOY_RESOURCES_LIMITS_CPUS:-1.5}
+          memory: ${DB_DEPLOY_RESOURCES_LIMITS_MEMORY:-2048M} # More memory for production DB caching
+        reservations:
+          cpus: ${DB_DEPLOY_RESOURCES_RESERVATIONS_CPUS:-0.75}
+          memory: ${DB_DEPLOY_RESOURCES_RESERVATIONS_MEMORY:-1024M}
+    logging:
+      driver: ${DB_LOG_DRIVER:-"json-file"}
+      options:
+        max-size: ${DB_LOG_MAX_SIZE:-"10m"}
+        max-file: ${DB_LOG_MAX_FILE:-3}
+        compress: ${DB_LOG_COMPRESS:-false}
+    volumes:
+      # Bind mount for database logs (host path: ${LOG_DIR}/db)
+      - ${LOG_DIR:-${CWD}/log}/db:/var/log/mysql
+  redis:
+    deploy:
+      resources:
+        limits:
+          cpus: ${REDIS_DEPLOY_RESOURCES_LIMITS_CPUS:-1.5}
+          memory: ${REDIS_DEPLOY_RESOURCES_LIMITS_MEMORY:-2048M} #
+        reservations:
+          cpus: ${REDIS_DEPLOY_RESOURCES_RESERVATIONS_CPUS:-0.75}
+          memory: ${REDIS_DEPLOY_RESOURCES_RESERVATIONS_MEMORY:-1024M}
+    logging:
+      driver: ${REDIS_LOG_DRIVER:-"json-file"}
+      options:
+        max-size: ${REDIS_LOG_MAX_SIZE:-"10m"}
+        max-file: ${REDIS_LOG_MAX_FILE:-3}
+        compress: ${REDIS_LOG_ENABLE_COMPRESSION:-false}
+  wordpress:
+    deploy:
+      resources:
+        limits:
+          cpus: ${WP_DEPLOY_RESOURCES_LIMITS_CPUS:-1.0}
+          memory: ${WP_DEPLOY_RESOURCES_LIMITS_MEMORY:-"1024M"} # More
+        reservations:
+          cpus: ${WP_DEPLOY_RESOURCES_RESERVATIONS_CPUS:-0.75}
+          memory: ${WP_DEPLOY_RESOURCES_RESERVATIONS_MEMORY:-"512M"}
+    logging:
+      driver: ${WP_LOG_DRIVER:-"json-file"}
+      options:
+        max-size: ${WP_LOG_MAX_SIZE:-"10m"}
+        max-file: ${WP_LOG_MAX_FILE:-3}
+        compress: ${WP_LOG_ENABLE_COMPRESSION:-false}
+    volumes:
+      - ${LOG_DIR:-${CWD}/log/${STAGE}}/wordpress:${WP_DEBUG_LOG_DIR}
+
+  nginx:
+    deploy:
+      resources:
+        limits:
+          cpus: ${NGINX_DEPLOY_RESOURCES_LIMITS_CPUS:-1.0}
+          memory: ${NGINX_DEPLOY_RESOURCES_LIMITS_MEMORY:-'256M'}
+        reservations:
+          cpus: ${NGINX_DEPLOY_RESOURCES_RESERVATIONS_CPUS:-0.25}
+          memory: ${NGINX_DEPLOY_RESOURCES_RESERVATIONS_MEMORY:-"128M"}
+    logging:
+      driver: ${NGINX_LOG_DRIVER:-"json-file"}
+      options:
+        max-size: ${NGINX_LOG_MAX_SIZE:-"10m"}
+        max-file: ${NGINX_LOG_MAX_FILE:-3}
+        compress: ${NGINX_LOG_ENABLE_COMPRESSION:-false}
+    volumes:
+      - ${LOG_DIR:-${CWD}/log/${STAGE}}/nginx:/var/log/nginx

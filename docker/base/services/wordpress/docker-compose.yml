@@ -1,0 +1,73 @@
+# docker-compose.wordpress.yml
+# Extends the WordPress service with specific PHP configuration via WP_CONFIG_EXTRA.
+
+# version: '3.8'
+
+services:
+  wordpress:
+    environment:
+      # Extensive WordPress PHP configuration passed as an environment variable.
+      # This will be injected into the WordPress container's wp-config.php.
+      WP_CONFIG_EXTRA: |
+        define('WP_HOME', 'https://${APP_DOMAIN}');
+        define('WP_SITEURL', 'https://${APP_DOMAIN}');
+        define('FORCE_SSL_ADMIN', true);
+        // Reverse Proxy SSL Detection
+        if (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https') {
+          $_SERVER['HTTPS'] = 'on';
+        }
+        // Alternative: For Load Balancer 
+        if (isset($_SERVER['HTTP_X_FORWARDED_SSL']) && $_SERVER['HTTP_X_FORWARDED_SSL'] === 'on') {
+          $_SERVER['HTTPS'] = 'on';
+        }      
+        // Redis Object Cache Configuration
+        # define('WP_REDIS_DISABLED', true); # Uncomment to disable Redis caching
+        define('WP_REDIS_HOST', ${REDIS_HOST:-redis});
+        define('WP_REDIS_PORT', ${REDIS_PORT:-6379});
+        define('WP_REDIS_PASSWORD', file_get_contents('/run/secrets/redis_password'));
+        define('WP_REDIS_CLIENT', 'phpredis');          // Use phpredis client
+        define('WP_REDIS_DATABASE', 0);
+        define('WP_REDIS_TIMEOUT', 1);
+        define('WP_REDIS_READ_TIMEOUT', 1);
+        define('WP_REDIS_MAXTTL', 86400);
+        define('WP_REDIS_SCHEME', 'tcp');
+
+        define('DISABLE_WP_CRON', true);                  // Disable WP-Cron to use a real cron job instead
+        define('XMLRPC_REQUEST', false);                  // Disable XML-RPC for security
+        define('REST_API_DISABLED', false);               // completely disabling the REST API will break many WordPress functionalities
+        define('HEARTBEAT_DISABLED', false);              // Heartbeat API is crucial for real-time communication in the WordPress admin area
+        define('AUTOMATIC_UPDATER_DISABLED', true);       // Disable automatic updates
+        add_filter('show_admin_bar', '__return_false');   // Disable the admin bar for all users. While it cleans up the frontend, it removes convenient shortcuts for logged-in users. Consider if this is truly desired for all user roles.
+        remove_action('wp_head', 'wp_generator');         // Disable the WordPress version in the HTML source
+        remove_action('wp_head', 'print_emoji_detection_script', 7);   // Disable the emoji script
+        remove_action('wp_print_styles', 'print_emoji_styles');        // Disable the REST API link in the HTML source
+        remove_action('wp_head', 'rest_output_link_wp_head', 10);      // Disable the REST API link in the HTML source 
+        remove_action('wp_head', 'wp_oembed_add_discovery_links');     // Disable the oEmbed discovery links
+        remove_action('wp_head', 'wp_oembed_add_host_js');             // Disable the oEmbed JavaScript
+        add_filter('the_generator', '__return_empty_string');          // Disable the WordPress version in the RSS feed
+        // Disable the WordPress version in the HTML source
+        add_filter('style_loader_src', 'remove_wp_version_from_css_js', 9999);
+        add_filter('script_loader_src', 'remove_wp_version_from_css_js', 9999);
+        function remove_wp_version_from_css_js($src) {
+            if (strpos($src, 'ver=') !== false) {
+                $src = remove_query_arg('ver', $src);
+            }
+            return $src;
+        }
+        // Cache-Konfiguration
+        define('WP_CACHE', true);
+        define('WP_CACHE_KEY_SALT', '${PROJECT_NAME}_'); 
+        // Additional security settings
+        define('FORCE_SSL_LOGIN', true);
+        define('DISALLOW_FILE_EDIT', true);
+        define('WP_ALLOW_REPAIR', false);
+        define('WP_POST_REVISIONS', 5);
+        define('AUTOSAVE_INTERVAL', 300); # 5 minutes
+        define('WP_MEMORY_LIMIT', '${WP_MEMORY_LIMIT}');
+        define('WP_MAX_MEMORY_LIMIT', '${WP_MAX_MEMORY_LIMIT}');
+        // Debugging settings
+        # Uncomment the following lines to disable debugging
+        # define('WP_DEBUG', false); #
+        # define('WP_DEBUG_LOG', false); #
+        # define('WP_DEBUG_DISPLAY', false); #
+        # @ini_set('display_errors', 0); #

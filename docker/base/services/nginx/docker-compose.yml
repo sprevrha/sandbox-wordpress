@@ -1,0 +1,116 @@
+# docker-compose.yml
+# Extends the Nginx service with its extensive configuration via environment variables, ports, and volumes.
+
+# version: '3.8'
+
+services:
+  nginx:
+    environment:
+      # Nginx server configuration variables
+      FASTCGI_PORT: ${FASTCGI_PORT:-9000}
+      NGINX_SERVER_NAME: ${NGINX_SERVER_NAME:-${APP_DOMAIN}}
+      NGINX_SERVER_ALIAS: ${NGINX_SERVER_ALIAS:-www.${APP_DOMAIN}}
+      WP_HTTP_PORT: ${WP_HTTP_PORT:-80}
+      WP_HTTPS_PORT: ${WP_HTTPS_PORT:-443}
+      NGINX_ROOT_DIR: ${NGINX_ROOT_DIR:-${APP_DIR}}
+      NGINX_INDEX: index.php index.html index.htm
+      NGINX_LOG_FORMAT: $$remote_addr - $$remote_user [$$time_local] "$$request" $$status $$body_bytes_sent "$$http_referer" "$$http_user_agent" "$$http_x_forwarded_for"
+      NGINX_ACCESS_LOG: /var/log/nginx/access.log
+      NGINX_ERROR_LOG: /var/log/nginx/error.log
+
+      # Client Body Size
+      NGINX_CLIENT_MAX_BODY_SIZE: ${NGINX_CLIENT_MAX_BODY_SIZE:-100M}
+      NGINX_CLIENT_BODY_BUFFER_SIZE: ${NGINX_CLIENT_BODY_BUFFER_SIZE:-16k}
+      NGINX_CLIENT_HEADER_BUFFER_SIZE: ${NGINX_CLIENT_HEADER_BUFFER_SIZE:-1k}
+      NGINX_LARGE_CLIENT_HEADER_BUFFERS: ${NGINX_LARGE_CLIENT_HEADER_BUFFERS:-4 8k}
+
+      # Connection settings
+      NGINX_CLIENT_BODY_TIMEOUT: ${NGINX_CLIENT_BODY_TIMEOUT:-60s}
+      NGINX_CLIENT_HEADER_TIMEOUT: ${NGINX_CLIENT_HEADER_TIMEOUT:-60s}
+      NGINX_KEEPALIVE_TIMEOUT: ${NGINX_KEEPALIVE_TIMEOUT:-65s}
+      NGINX_SEND_TIMEOUT: ${NGINX_SEND_TIMEOUT:-60s}
+      NGINX_KEEPALIVE_REQUESTS: ${NGINX_KEEPALIVE_REQUESTS:-100}
+      NGINX_PROXY_TIMEOUT: ${NGINX_PROXY_TIMEOUT:-60s}
+      NGINX_SENDFILE: ${NGINX_SENDFILE:-on}
+      NGINX_TCP_NOPUSH: ${NGINX_TCP_NOPUSH:-on}
+      NGINX_TCP_NODELAY: ${NGINX_TCP_NODELAY:-on}
+      NGINX_RESET_TIMEDOUT_CONNECTION: ${NGINX_RESET_TIMEDOUT_CONNECTION:-on}
+      NGINX_SERVER_TOKENS: ${NGINX_SERVER_TOKENS:-off}
+      NGINX_UNDERSCORES_IN_HEADERS: ${NGINX_UNDERSCORES_IN_HEADERS:-on}
+      NGINX_CHARSET: ${NGINX_CHARSET:-utf-8}
+      NGINX_CHARSET_TYPES: ${NGINX_CHARSET_TYPES:- text/plain text/css application/json application/javascript application/x-javascript application/xml application/xml+rss text/javascript image/svg+xml image/x-icon image/png image/jpeg image/gif}
+      NGINX_WORKER_CONNECTIONS: ${NGINX_WORKER_CONNECTIONS:-1024}
+      NGINX_WORKER_PROCESSES: ${NGINX_WORKER_PROCESSES:-auto}
+      NGINX_WORKER_RLIMIT_NOFILE: ${NGINX_WORKER_RLIMIT_NOFILE:-65536}
+
+      # Gzip settings
+      NGINX_GZIP: ${NGINX_GZIP:-on}
+      NGINX_GZIP_HTTP_VERSION: ${NGINX_GZIP_HTTP_VERSION:-1.1}
+      NGINX_GZIP_COMP_LEVEL: ${NGINX_GZIP_COMP_LEVEL:-5}
+      NGINX_GZIP_MIN_LENGTH: ${NGINX_GZIP_MIN_LENGTH:-256}
+      NGINX_GZIP_PROXIED: ${NGINX_GZIP_PROXIED:-any}
+      NGINX_GZIP_TYPES: ${NGINX_GZIP_TYPES:-text/plain text/css text/xml text/javascript application/javascript application/xml+rss application/json application/font-woff application/font-woff2 font/woff font/woff2 image/svg+xml}
+      NGINX_GZIP_VARY: ${NGINX_GZIP_VARY:-on}
+      NGINX_GZIP_DISABLE: ${NGINX_GZIP_DISABLE:-msie6}
+    
+    # SSL settings
+      NGINX_ENABLE_SSL: ${NGINX_ENABLE_SSL:-true}
+      NGINX_SSL_CERT: ${NGINX_SSL_CERT_PATH}
+      NGINX_SSL_CERT_KEY: ${NGINX_SSL_KEY_PATH}
+      NGINX_SSL_TRUSTED_CERT: ${NGINX_SSL_TRUSTED_CERT_PATH}
+      NGINX_SSL_DHPARAM: ${NGINX_SSL_DHPARAM_PATH}
+      NGINX_SSL_PROTOCOLS: ${NGINX_SSL_PROTOCOLS:-TLSv1.2 TLSv1.3}
+      NGINX_SSL_CIPHERS: ${NGINX_SSL_CIPHERS:-ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305}
+      NGINX_PREFER_SERVER_CIPHERS: ${NGINX_PREFER_SERVER_CIPHERS:-off}
+      NGINX_SSL_SESSION_TICKET: ${NGINX_SSL_SESSION_TICKET:-on}
+      NGINX_SSL_SESSION_CACHE: ${NGINX_SSL_SESSION_CACHE:-shared:SSL:10m}
+      NGINX_SSL_SESSION_TIMEOUT: ${NGINX_SSL_SESSION_TIMEOUT:-10m}
+      NGINX_SSL_VERIFY_DEPTH: ${NGINX_SSL_VERIFY_DEPTH:-2}
+      NGINX_SSL_STAPLING: ${NGINX_SSL_STAPLING:-on}
+      NGINX_SSL_STAPLING_VERIFY: ${NGINX_SSL_STAPLING_VERIFY:-on}
+      NGINX_SSL_VERIFY_CLIENT: ${NGINX_SSL_VERIFY_CLIENT:-off}
+
+      NGINX_TYPES_HASH_MAX_SIZE: ${NGINX_TYPES_HASH_MAX_SIZE:-2048}
+      NGINX_TYPES_HASH_BUCKET_SIZE: ${NGINX_TYPES_HASH_BUCKET_SIZE:-128}
+      
+      # DNS Resolver
+      NGINX_RESOLVER: ${NGINX_RESOLVER:-8.8.8.8}
+      NGINX_RESOLVER_TIMEOUT: ${NGINX_RESOLVER_TIMEOUT:-10s}
+      NGINX_RESOLVER_VALID: ${NGINX_RESOLVER_VALID:-10s}
+
+      # Optional: Enable rewrite log for debugging
+      NGINX_REWRITE_LOG: ${NGINX_REWRITE_LOG:-off}
+
+      NGINX_HTTP2: ${NGINX_HTTP2:-true}
+      NGINX_REWRITE: ${NGINX_REWRITE:-true}
+      NGINX_HSTS: ${NGINX_HSTS:-true}
+
+      # Security headers
+      NGINX_X_FRAME_OPTIONS: ${NGINX_X_FRAME_OPTIONS:-SAMEORIGIN}
+      NGINX_X_CONTENT_TYPE_OPTIONS: ${NGINX_X_CONTENT_TYPE_OPTIONS:-nosniff}
+      NGINX_X_XSS_PROTECTION: ${NGINX_X_XSS_PROTECTION:-"1; mode=block"}
+      NGINX_REFERRER_POLICY: ${NGINX_REFERRER_POLICY:-"no-referrer-when-downgrade"}
+
+      # CSP is quite restrictive, which is good for security, but might cause issues with some plugins or external scripts.
+      NGINX_CONTENT_SECURITY_POLICY: ${NGINX_CONTENT_SECURITY_POLICY:-"default-src 'self'; img-src 'self' data:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://ajax.googleapis.com https://www.google-analytics.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; frame-src 'self' https://www.youtube.com; object-src 'none'; base-uri 'self';"}
+        
+      NGINX_CONTENT_SECURITY_POLICY_REPORT_ONLY: ${NGINX_CONTENT_SECURITY_POLICY_REPORT_ONLY:-"false"}
+      NGINX_STRICT_TRANSPORT_SECURITY: ${NGINX_STRICT_TRANSPORT_SECURITY:-"max-age=31536000; includeSubDomains; preload"}
+      
+      # Proxy settings
+      NGINX_PROXY_PASS: ${NGINX_PROXY_PASS:-wordpress:${FASTCGI_PORT:-9000}}
+      NGINX_PROXY_READ_TIMEOUT: ${NGINX_PROXY_READ_TIMEOUT:-60s}
+      NGINX_PROXY_BUFFER_SIZE: ${NGINX_PROXY_BUFFER_SIZE:-16k}
+      NGINX_PROXY_BUFFERS: ${NGINX_PROXY_BUFFERS:-8 8k}
+      NGINX_PROXY_BUSY_BUFFERS_SIZE: ${NGINX_PROXY_BUSY_BUFFERS_SIZE:-16k}
+      NGINX_PROXY_CONNECT_TIMEOUT: ${NGINX_PROXY_CONNECT_TIMEOUT:-60s}
+      NGINX_PROXY_SEND_TIMEOUT: ${NGINX_PROXY_SEND_TIMEOUT:-60s}
+      # Proxy temporary file settings
+      NGINX_PROXY_MAX_TEMP_FILE_SIZE: ${NGINX_PROXY_MAX_TEMP_FILE_SIZE:-1024m}
+      NGINX_PROXY_TEMP_FILE_SIZE: ${NGINX_PROXY_TEMP_FILE_SIZE:-1024m}
+      NGINX_PROXY_TEMP_FILE_WRITE_SIZE: ${NGINX_PROXY_TEMP_FILE_WRITE_SIZE:-1024m}
+      NGINX_PROXY_TEMP_DIR: ${NGINX_PROXY_TEMP_DIR:-/var/cache/nginx/proxy_temp}
+    extra_hosts:
+      # Map APP_DOMAIN to localhost within the Nginx container for internal routing
+      - "${NGINX_EXTRA_HOSTS:-${APP_DOMAIN}:127.0.0.1}"
+    entrypoint: /usr/local/bin/entrypoint.sh # Custom entrypoint script
