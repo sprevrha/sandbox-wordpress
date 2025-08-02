@@ -91,7 +91,7 @@ services:
       start_period: ${REDIS_HEALTHCHECK_START_PERIOD:-20s} # Allow time for Redis to initialize
 
   wordpress:
-    image: ${WP_IMAGE:-wordpress:6.4-php8.2-fpm-alpine}
+    image: ${WP_IMAGE:-wordpress:6.8.2-php8.4-fpm-alpine}
     container_name: ${WP_CONTAINER_NAME:-wordpress}
     # Depends on DB and Redis being healthy before starting
     depends_on:
@@ -109,22 +109,60 @@ services:
       - db_password
       - redis_password
     environment:
-#      WP_CONFIG_FILE: /var/www/html/wp-my-config.php    
+#      WP_CONFIG_FILE: ${WP_CONFIG_FILE:-/var/www/html/wp-my-config.php}    
       # Database connection details for WordPress
+      WP_HOME: ${WP_HOME:-https://${APP_DOMAIN}}
+      WP_SITEURL: ${WP_SITEURL:-https://${APP_DOMAIN}}
+      WP_LANG: ${WP_LANG:-en_US}
+      FORCE_SSL_ADMIN: ${WP_FORCE_SSL_ADMIN:-false}
       FASTCGI_PORT: ${FASTCGI_PORT:-9000}
       WORDPRESS_DB_HOST: db:${DB_PORT}
       WORDPRESS_DB_USER_FILE: /run/secrets/db_user
       WORDPRESS_DB_PASSWORD_FILE: /run/secrets/db_password
       WORDPRESS_DB_NAME: ${DB_NAME}
-      WP_PHP_EXTRA: ${WP_PHP_EXTRA:-/opt/php-extra}
+      WORDPRESS_TABLE_PREFIX: ${WORDPRESS_TABLE_PREFIX:-wp_}
+      WP_ENVIRONMENT_TYPE: ${WP_ENVIRONMENT_TYPE:-development}
+      WP_PHP_EXTRA: ${WP_PHP_EXTRA:-/opt/php-extra}        # Redis Object Cache Configuration
+      # WP_REDIS_DISABLED: true # Uncomment to disable Redis caching
+      WP_REDIS_HOST: ${REDIS_HOST:-redis}
+      WP_REDIS_PORT: ${REDIS_PORT:-6379}
+      WP_REDIS_PASSWORD_FILE: /run/secrets/redis_password
+      # Use phpredis client
+      WP_REDIS_CLIENT: phpredis          
+      WP_REDIS_DATABASE: 0
+      WP_REDIS_TIMEOUT: 1
+      WP_REDIS_READ_TIMEOUT: 1
+      WP_REDIS_MAXTTL: 86400
+      WP_REDIS_SCHEME: tcp
+
+      # Cache-Konfiguration
+      WP_CACHE: true
+      WP_CACHE_KEY_SALT: ${PROJECT_NAME}_ 
+      # Additional security settings
+      FORCE_SSL_LOGIN: ${WP_FORCE_SSL_LOGIN:-false}
+      DISALLOW_FILE_EDIT: ${WP_DISALLOW_FILE_EDIT:-tru}
+      WP_ALLOW_REPAIR: ${WP_ALLOW_REPAIR:-false}
+      WP_POST_REVISIONS: ${WP_POST_REVISIONS:-5}
+      AUTOSAVE_INTERVAL: ${WP_AUTOSAVE_INTERVAL:-300} # 5 minutes
+      XMLRPC_REQUEST: ${WP_XMLRPC_REQUEST:-false}     # Disable XML-RPC for security
+      DISABLE_WP_CRON: true                  # Disable WP-Cron to use a real cron job instead
+      REST_API_DISABLED: ${WP_REST_API_DISABLED:-false}                        # completely disabling the REST API will break many WordPress functionalities
+      HEARTBEAT_DISABLED: ${WP_HEARTBEAT_DISABLED:-false}                      # Heartbeat API is crucial for real-time communication in the WordPress admin area
+      AUTOMATIC_UPDATER_DISABLED: ${WP_AUTOMATIC_UPDATER_DISABLED:-true}       # Disable automatic updates
+
+      # Memory settings
+      WP_MEMORY_LIMIT: ${WP_MEMORY_LIMIT:-256M}
+      WP_MAX_MEMORY_LIMIT: ${WP_MAX_ME:-512M}
+
     healthcheck:
       test: ["CMD", "/usr/local/bin/combined-healthcheck.sh"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 30s # Allow time for WordPress to initialize 
+    user: www-data:www-data
     volumes:
-      - ./docker/base/services/wordpress/php/wp-healthcheck.php:${WP_PHP_EXTRA}/wp-healthcheck.php
+      - ${WP_PHP_SRC_DIR}/wp-healthcheck.php:${WP_PHP_EXTRA}/wp-healthcheck.php
       - ./docker/base/services/wordpress/bin/combined-healthcheck.sh:/usr/local/bin/combined-healthcheck.sh
       - wp_data:/var/www/html
   nginx:

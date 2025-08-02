@@ -19,6 +19,7 @@
 
 # Artifacts
 *.out
+out/
 
 # Log files
 logs

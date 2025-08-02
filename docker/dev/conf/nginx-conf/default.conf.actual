@@ -23,14 +23,19 @@ map $http_x_purge $purge {
     "~^purge$" 1;
 }
 
-# This needs to go after the server block
-#worker_processes auto;
-#worker_rlimit_nofile 65536;
-#events {
-#    worker_connections 1024;
-#}
+# Gzip settings - apply to all server blocks
+gzip on;
+gzip_http_version 1.1;
+gzip_comp_level 5;
+gzip_min_length 256;
+gzip_proxied any;
+gzip_types text/plain text/css text/xml text/javascript application/javascript application/xml+rss application/json application/font-woff application/font-woff2 font/woff font/woff2 image/svg+xml;
+gzip_vary on;
+gzip_disable "msie6"; # quotes for the regex pattern
 
 # Log format
+# Commented out because it is already defined in nginx.conf in the current nginx 
+# docker image
 # log_format main '$remote_addr - $remote_user [$time_local] "$request" $status $body_bytes_sent "$http_referer" "$http_user_agent" "$http_x_forwarded_for"';
 
 # HTTP Server - redirects to HTTPS
@@ -65,20 +70,6 @@ server {
     root /var/www/html;
     index index.php index.html index.htm;    
     
-    # FastCGI Purge Location
-#    location ~ /purge(/.*) {
-#        allow all;
-#        fastcgi_cache_purge WORDPRESS $purge;
-#    }
-
-    # FastCGI Cache Purge for specific paths
-    location ~ /wp-admin/ {
-        allow all;
-        # never chache
-        fastcgi_cache_bypass 1; 
-        fastcgi_no_cache 1; 
-    }
-
     # Logging
     access_log /var/log/nginx/access.log main;
     error_log /var/log/nginx/error.log;
@@ -105,17 +96,7 @@ server {
     server_tokens off;
     underscores_in_headers on;
     charset utf-8;
-    charset_types text/html text/plain text/css application/json application/javascript application/x-javascript application/xml application/xml+rss text/javascript image/svg+xml image/x-icon image/png image/jpeg image/gif;
-
-    # Gzip settings - PLACE THESE HERE
-    gzip on;
-    gzip_http_version 1.1;
-    gzip_comp_level 5;
-    gzip_min_length 256;
-    gzip_proxied any;
-    gzip_types text/plain text/css text/xml text/javascript application/javascript application/xml+rss application/json application/font-woff application/font-woff2 font/woff font/woff2 image/svg+xml;
-    gzip_vary on;
-    gzip_disable "msie6"; # quotes for the regex pattern
+    charset_types  text/plain text/css application/json application/javascript application/x-javascript application/xml application/xml+rss text/javascript image/svg+xml image/x-icon image/png image/jpeg image/gif;
 
     # SSL Configuration  
     ssl_certificate /etc/ssl/certs/ssl-cert-snakeoil.pem;
@@ -160,8 +141,10 @@ server {
         try_files $uri $uri/ /index.php?$args;
     }
     
-    # PHP processing - Main block (consolidated)
+    # PHP processing for all .php files
     location ~ \.php$ {
+        # This is where the magic happens.
+        # It handles all PHP files, including those in /wp-admin/.
         try_files $uri =404;
         fastcgi_split_path_info ^(.+\.php)(/.+)$;
         fastcgi_pass sandbox-wordpress_wordpress:9000;
@@ -171,8 +154,6 @@ server {
         fastcgi_param HTTP_X_FORWARDED_PROTO https;
         fastcgi_param HTTPS on;
         include fastcgi_params;
-        
-        # WordPress specific FastCGI parameters
         fastcgi_read_timeout 60s;
         fastcgi_buffer_size 16k;
         fastcgi_buffers 8 8k;
@@ -181,9 +162,76 @@ server {
         fastcgi_connect_timeout 60s;
         fastcgi_send_timeout 60s;
         fastcgi_intercept_errors on;
+    }
 
+    # No caching for wp-admin directory
+    location /wp-admin {
+        # This is a standard WordPress rewrite rule for the admin dashboard
+        index index.php;
+        try_files $uri $uri/ /index.php?$args;
+
+        location ~ \.php$ {
+            # Disable all forms of caching
+            fastcgi_cache_bypass 1;
+            fastcgi_no_cache 1;
+
+            # Pass the request to the WordPress PHP-FPM container
+            include fastcgi_params;
+            fastcgi_split_path_info ^(.+\.php)(/.+)$;
+            fastcgi_pass wordpress:9000;
+            fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+            fastcgi_param PATH_INFO $fastcgi_path_info;
+        }
+    }
+
+    # WordPress admin-ajax.php (don't cache)
+    location = /wp-admin/admin-ajax.php {
+        try_files $uri =404;
+        fastcgi_split_path_info ^(.+\.php)(/.+)$;
+        fastcgi_pass wordpress:9000;
+        fastcgi_index index.php;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+        include fastcgi_params;
+        fastcgi_read_timeout 60s;
+        fastcgi_cache_bypass 1;
+        fastcgi_no_cache 1;
     }
     
+    # Simple cache purge alternative - returns cache status info
+    location ~ /purge(/.*) {
+        allow 127.0.0.1;
+        allow 10.0.0.0/8;
+        allow 172.16.0.0/12;
+        allow 192.168.0.0/16;
+        deny all;
+        
+        # Return cache information instead of purging
+        # Manual purge can be done via: find /var/cache/nginx -name "*" -delete
+        return 200 "Cache purge endpoint - manual deletion required\nCache directory: /var/cache/nginx\nRequested URI: $1\nTo purge all cache: docker exec <container> find /var/cache/nginx -type f -delete\n";
+        add_header Content-Type text/plain;
+    }
+
+    # Set cache bypass conditions
+    set $skip_cache 0;
+    
+    # POST requests and URLs with a query string should always go to PHP
+    if ($request_method = POST) {
+        set $skip_cache 1;
+    }
+    if ($query_string != "") {
+        set $skip_cache 1;
+    }
+    
+    # Don't cache URIs containing the following segments
+    if ($request_uri ~* "/wp-admin/|/xmlrpc.php|wp-.*.php|/feed/|index.php|sitemap(_index)?.xml") {
+        set $skip_cache 1;
+    }
+    
+    # Don't use the cache for logged-in users or recent commenters
+    if ($http_cookie ~* "comment_author|wordpress_[a-f0-9]+|wp-postpass|wordpress_no_cache|wordpress_logged_in") {
+        set $skip_cache 1;
+    }   
+
     # Static assets caching
     location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg)$ {
         expires 30d;
@@ -227,34 +275,35 @@ server {
         add_header Cache-Control "public, no-transform" always;
     }
     
-    # WordPress specific security
+    # Prevent access to WordPress specific security
     location ~ /\.ht {
         deny all;
     }
     
-    # Hide WordPress sensitive files
+    # Prevent access to WordPress sensitive files
     location ~* \.(txt|log|conf)$ {
         deny all;
     }
     
-    # WordPress admin-ajax.php (don't cache)
-    location = /wp-admin/admin-ajax.php {
-        try_files $uri =404;
-        fastcgi_split_path_info ^(.+\.php)(/.+)$;
-        fastcgi_pass sandbox-wordpress_wordpress:9000;
-        fastcgi_index index.php;
-        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
-        include fastcgi_params;
-        fastcgi_read_timeout 60s;
-    }
-    
-    # WordPress uploads directory
+    # Prevent access to WordPress uploads directory
     location ~* /wp-content/uploads/.*\.php$ {
         deny all;
     }
     
-    # WordPress includes directory
+    # Prevent access to WordPress includes directory
     location ~* /wp-includes/.*\.php$ {
         deny all;
     }
+
+    # Prevent access to wp-config.php
+    location ~* wp-config\.php {
+        deny all;
+    }
 }
+
+# This needs to go after the server block
+#worker_processes auto;
+#worker_rlimit_nofile 65536;
+#events {
+#    worker_connections 1024;
+#}

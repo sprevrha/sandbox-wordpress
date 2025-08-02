@@ -141,36 +141,48 @@ server {
         try_files $uri $uri/ /index.php?$args;
     }
     
-    # Don't cache admin areas
-    location ~ /wp-admin/ {
+    # PHP processing for all .php files
+    location ~ \.php$ {
+        # This is where the magic happens.
+        # It handles all PHP files, including those in /wp-admin/.
+        try_files $uri =404;
+        fastcgi_split_path_info ^(.+\.php)(/.+)$;
+        fastcgi_pass sandbox-wordpress_wordpress:9000;
+        fastcgi_index index.php;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+        fastcgi_param PATH_INFO $fastcgi_path_info;
+        fastcgi_param HTTP_X_FORWARDED_PROTO https;
+        fastcgi_param HTTPS on;
+        include fastcgi_params;
+        fastcgi_read_timeout 60s;
+        fastcgi_buffer_size 16k;
+        fastcgi_buffers 8 8k;
+        fastcgi_busy_buffers_size 16k;
+        fastcgi_temp_file_write_size 1024m;
+        fastcgi_connect_timeout 60s;
+        fastcgi_send_timeout 60s;
+        fastcgi_intercept_errors on;
+    }
+
+    # No caching for wp-admin directory
+    location /wp-admin {
+        # This is a standard WordPress rewrite rule for the admin dashboard
+        index index.php;
         try_files $uri $uri/ /index.php?$args;
-        
+
         location ~ \.php$ {
-            try_files $uri =404;
+            # Disable all forms of caching
+            fastcgi_cache_bypass 1;
+            fastcgi_no_cache 1;
+
+            # Pass the request to the WordPress PHP-FPM container
+            include fastcgi_params;
             fastcgi_split_path_info ^(.+\.php)(/.+)$;
-            fastcgi_pass ${NGINX_PROXY_PASS};
-            fastcgi_index index.php;
+            fastcgi_pass wordpress:9000;
             fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
             fastcgi_param PATH_INFO $fastcgi_path_info;
-            fastcgi_param HTTP_X_FORWARDED_PROTO https;
-            fastcgi_param HTTPS on;
-            include fastcgi_params;
-            
-            # WordPress specific FastCGI parameters
-            fastcgi_read_timeout 60s;
-            fastcgi_buffer_size 16k;
-            fastcgi_buffers 8 8k;
-            fastcgi_busy_buffers_size 16k;
-            fastcgi_temp_file_write_size 1024m;
-            fastcgi_connect_timeout 60s;
-            fastcgi_send_timeout 60s;
-            fastcgi_intercept_errors on;
-            
-            # Never cache admin
-            fastcgi_cache_bypass 1; 
-            fastcgi_no_cache 1;
         }
-    }    
+    }
 
     # WordPress admin-ajax.php (don't cache)
     location = /wp-admin/admin-ajax.php {
@@ -220,35 +232,6 @@ server {
         set $skip_cache 1;
     }   
 
-    # PHP processing - Main block (consolidated) with caching enabled or disabled based on the value of $skip_cache
-    location ~ \.php$ {
-        try_files $uri =404;
-        fastcgi_split_path_info ^(.+\.php)(/.+)$;
-        fastcgi_pass ${NGINX_PROXY_PASS};
-        fastcgi_index index.php;
-        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
-        fastcgi_param PATH_INFO $fastcgi_path_info;
-        fastcgi_param HTTP_X_FORWARDED_PROTO https;
-        fastcgi_param HTTPS on;
-        include fastcgi_params;
-        
-        # WordPress specific FastCGI parameters
-        fastcgi_read_timeout ${NGINX_PROXY_READ_TIMEOUT};
-        fastcgi_buffer_size ${NGINX_PROXY_BUFFER_SIZE};
-        fastcgi_buffers ${NGINX_PROXY_BUFFERS};
-        fastcgi_busy_buffers_size ${NGINX_PROXY_BUSY_BUFFERS_SIZE};
-        fastcgi_temp_file_write_size ${NGINX_PROXY_TEMP_FILE_WRITE_SIZE};
-        fastcgi_connect_timeout ${NGINX_PROXY_CONNECT_TIMEOUT};
-        fastcgi_send_timeout ${NGINX_PROXY_SEND_TIMEOUT};
-        fastcgi_intercept_errors on;
-
-        fastcgi_cache WORDPRESS;
-        fastcgi_cache_bypass $skip_cache;
-        fastcgi_no_cache $skip_cache;
-        fastcgi_cache_bypass $http_cache_control;
-        fastcgi_no_cache $http_cache_control;
-    }
-    
     # Static assets caching
     location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg)$ {
         expires 30d;

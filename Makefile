@@ -82,6 +82,22 @@ build: ## Build Docker images defined in the compose file
 	@$(DOCKER_COMPOSE_CMD) build $(if $(SERVICE),$(SERVICE),)
 	@echo "Docker Compose images built: $(if $(SERVICE),$(SERVICE),all)."
 
+remove: ## Remove Docker images defined in the compose file
+	@echo "Removing Docker images: $(if $(SERVICE),$(SERVICE),all) ..."
+	@$(DOCKER_COMPOSE_CMD) rm --force $(if $(SERVICE),$(SERVICE),)
+	@echo "Docker images removed: $(if $(SERVICE),$(SERVICE),all)."
+	
+rebuild: ## Rebuild Docker images defined in the compose file and remove old containers
+	@echo "Stopping and removing Docker Compose services and removing volumes: $(if $(SERVICE),$(SERVICE),all) ..."
+	$(DOCKER_COMPOSE_CMD) down --volumes --remove-orphans $(if $(SERVICE),$(SERVICE),)
+	@echo "Removing Docker images: $(if $(SERVICE),$(SERVICE),all) ..."
+	@$(DOCKER_COMPOSE_CMD) rm --force $(if $(SERVICE),$(SERVICE),)
+	@echo "Building Docker images: $(if $(SERVICE),$(SERVICE),all) ..."
+	@$(DOCKER_COMPOSE_CMD) build $(if $(SERVICE),$(SERVICE),)
+	@echo "Starting Docker Compose services: $(if $(SERVICE),$(SERVICE),all) ..."
+	$(DOCKER_COMPOSE_CMD) up -d --remove-orphans $(if $(SERVICE),$(SERVICE),)
+	@echo "Docker Compose images rebuilt and started: $(if $(SERVICE),$(SERVICE),all)."
+
 pull: ## Pull the latest images defined in the compose file
 	@echo "Pulling Docker images: $(if $(SERVICE),$(SERVICE),all) ..."
 	@$(DOCKER_COMPOSE_CMD) pull $(if $(SERVICE),$(SERVICE),)
@@ -115,13 +131,13 @@ clean: ## Stop, remove, and clean up Docker volumes (use with caution!)
 	@echo "Docker volumes and images cleaned for $(if $(SERVICE),$(SERVICE),all)."
 
 # Define a variable to capture the container name argument
-CONTAINER_NAME ?= # Default to empty, meaning no container specified
-
-login: ## Log in to a specific Docker container given by CONTAINER_NAME=<container_name>
-	@if [ -z "$(CONTAINER_NAME)" ]; then \
-		echo "Error: No container specified. Use 'make login CONTAINER_NAME=<container_name>'"; \
+CONTAINER ?= # Default to empty, meaning no container specified
+USER ?= root 
+login: ## Log in to a specific Docker container given by CONTAINER_NAME=<container_name> USER=<username (default:root)>
+	@if [ -z "$(CONTAINER)" ]; then \
+		echo "Error: No container specified. Use 'make login CONTAINER=<container_name> USER=<username (default:root)>'"; \
 	else \
-		docker exec -it $(CONTAINER_NAME) sh; \
+		docker exec -u $(USER) -it $(CONTAINER) sh; \
 	fi
 # --- Help Target ---
 help: ## Show this help message
@@ -131,6 +147,9 @@ help: ## Show this help message
 	@awk '/^[a-zA-Z_-]+:.*?## / {printf "\033[36m%-20s\033[0m %s\n", $$1, substr($$0, index($$0, "##") + 3)}' $(MAKEFILE_LIST) | sort
 	@echo "-------------------- ----------------------------------------"
 
+show_logs: ## Show the #Docker logs for the specified service or all services
+	@echo "Docker logs for: $(if $(SERVICE),$(SERVICE),all) ..."
+	@$(DOCKER_COMPOSE_CMD) logs $(if $(SERVICE),$(SERVICE),)
 
 show_vars: ## Show the current environment variables and their values
 	@echo "These values are loaded from the specified .env files or your shell environment."
@@ -157,6 +176,11 @@ show_docker_config: ## Show the Docker Compose configuration
 	@printf "# %s" "$(DOCKER_COMPOSE_CMD) config"
 	@$(DOCKER_COMPOSE_CMD) config
 
+show_docker_command: ## Show the Docker Compose command
+	@echo "# Showing Docker Compose command..."
+	@printf "%s\n" "$(DOCKER_COMPOSE_CMD)"
+
+# --- Example of custom targets ---
 # Define the URL of your WordPress main page
 WP_URL := https://$(APP_DOMAIN):$(DOCKER_HOST_HTTPS_PORT)
 
@@ -169,6 +193,6 @@ else
 	@open $(WP_URL) || xdg-open $(WP_URL) || echo "Could not open browser. Please open $(WP_URL) manually."
 endif
 
-.PHONY: all up down restart build pull validate clean show_vars show_docker_compose_config healthcheck help open-wordpress login
+.PHONY: all up down restart remove rebuild build pull validate clean show_logs show_vars show_docker_compose_config healthcheck help open-wordpress login
 
 # --- End of Makefile ---
