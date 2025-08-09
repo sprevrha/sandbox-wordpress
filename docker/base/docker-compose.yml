@@ -143,13 +143,12 @@ services:
       DISALLOW_FILE_EDIT: ${WP_DISALLOW_FILE_EDIT:-tru}
       WP_ALLOW_REPAIR: ${WP_ALLOW_REPAIR:-false}
       WP_POST_REVISIONS: ${WP_POST_REVISIONS:-5}
-      AUTOSAVE_INTERVAL: ${WP_AUTOSAVE_INTERVAL:-300} # 5 minutes
-      XMLRPC_REQUEST: ${WP_XMLRPC_REQUEST:-false}     # Disable XML-RPC for security
-      DISABLE_WP_CRON: true                  # Disable WP-Cron to use a real cron job instead
-      REST_API_DISABLED: ${WP_REST_API_DISABLED:-false}                        # completely disabling the REST API will break many WordPress functionalities
-      HEARTBEAT_DISABLED: ${WP_HEARTBEAT_DISABLED:-false}                      # Heartbeat API is crucial for real-time communication in the WordPress admin area
-      AUTOMATIC_UPDATER_DISABLED: ${WP_AUTOMATIC_UPDATER_DISABLED:-true}       # Disable automatic updates
-
+      AUTOSAVE_INTERVAL: ${WP_AUTOSAVE_INTERVAL:-300}                     # 5 minutes
+      DISABLE_WP_CRON: false                                              # Disable WP-Cron to use a real cron job instead
+      REST_API_DISABLED: ${WP_REST_API_DISABLED:-false}                   # completely disabling the REST API will break many WordPress functionalities
+      HEARTBEAT_DISABLED: ${WP_HEARTBEAT_DISABLED:-false}                 # Heartbeat API is crucial for real-time communication in the WordPress admin area
+      AUTOMATIC_UPDATER_DISABLED: ${WP_AUTOMATIC_UPDATER_DISABLED:-true}  # Disable automatic updates
+      DISALLOW_FILE_MODS: ${WP_DISALLOW_FILE_MODS:-false}                 # Disallow file modifications to prevent accidental data loss
       # Memory settings
       WP_MEMORY_LIMIT: ${WP_MEMORY_LIMIT:-256M}
       WP_MAX_MEMORY_LIMIT: ${WP_MAX_ME:-512M}

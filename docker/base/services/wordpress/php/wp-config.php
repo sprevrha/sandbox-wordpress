@@ -128,6 +128,9 @@ if (!defined('WP_MEMORY_LIMIT')) {
 if (!defined('WP_MAX_MEMORY_LIMIT')) {
     define('WP_MAX_MEMORY_LIMIT', getenv('WP_MAX_MEMORY_LIMIT' ?: '512M'));
 }
+if (!defined('DISALLOW_FILE_MODS')) {
+	define('DISALLOW_FILE_MODS', getenv('DISALLOW_FILE_MODS') ?: false);
+}
 // Reverse Proxy SSL Detection (Corrected PHP syntax)
 if (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https') {
     $_SERVER['HTTPS'] = 'on';
